@@ -1,5 +1,24 @@
 # seoupdate
 
+
+
+Después ejecuta:
+Schema::getColumnListing('productos');
+Quiero comprobar si aparece:
+referencia
+y si todavía aparece:
+codigo
+También revisemos la búsqueda
+En Tinker:
+App\Models\Producto::query()->first();
+Si eso funciona, prueba:
+App\Models\Producto::where('referencia', 'LIKE', '%')->first();
+Si aquí aparece:
+Unknown column 'referencia'
+entonces ya tenemos identificado el problema: el código fue cambiado a referencia, pero la estructura real de productos todavía no está sincronizada.
+
+
+
 Sí. Eso cambia dos partes importantes del diseño y conviene incorporarlo antes de hacer los cambios anteriores, porque afecta creación de productos, búsqueda, cotización, Excel y cálculo de impuestos.
 
 1. Reemplazar Código por Referencia globalmente
