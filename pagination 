@@ -1,0 +1,139 @@
+Procesó durante 12s
+
+Sí. Esta vez validé directamente el repositorio cotiazacionv2 y corrijo lo anterior: tu proyecto no tiene una vista personalizada de paginación en resources/views/vendor/pagination. Además, encontré exactamente por qué aparecen esos span/svg.
+
+Lo que realmente tiene tu repositorio
+
+Tu proyecto es Laravel 11. 
+
+En resources/views/components/app-layout.blade.php cargas:
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+
+y también Bootstrap Icons. 
+
+Pero en AppServiceProvider.php no estás indicando a Laravel que use Bootstrap para la paginación. Actualmente solamente tienes:
+
+public function boot(): void
+{
+    Schema::defaultStringLength(191);
+}
+
+
+
+Por eso {{ $productos->links() }} está utilizando la vista de paginación predeterminada de Laravel, que actualmente es compatible con Tailwind y genera los SVG. Laravel confirma que links() utiliza la vista predeterminada de paginación y que puede configurarse globalmente. 
+
+Además, comprobé que links() se está usando directamente en:
+
+productos/index.blade.php → {{ $productos->links() }} 
+
+cotizaciones/index.blade.php → {{ $cotizaciones->links() }} 
+
+
+La solución correcta para TU repositorio
+
+Como ya utilizas Bootstrap 5 globalmente, no necesitamos crear una paginación nueva.
+
+1. Modificar
+
+app/Providers/AppServiceProvider.php
+
+Agregar:
+
+use Illuminate\Pagination\Paginator;
+
+Entonces quedaría:
+
+<?php
+
+namespace App\Providers;
+
+use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Pagination\Paginator;
+
+class AppServiceProvider extends ServiceProvider
+{
+    /**
+     * Register any application services.
+     */
+    public function register(): void
+    {
+        //
+    }
+
+    /**
+     * Bootstrap any application services.
+     */
+    public function boot(): void
+    {
+        Schema::defaultStringLength(191);
+
+        Paginator::useBootstrapFive();
+    }
+}
+
+2. No modificar
+
+No necesitas cambiar:
+
+{{ $productos->links() }}
+
+ni:
+
+{{ $cotizaciones->links() }}
+
+Se quedan exactamente así.
+
+Laravel permite seleccionar globalmente la vista Bootstrap mediante Paginator::useBootstrapFive(). 
+
+
+---
+
+¿Qué conseguimos?
+
+Actualmente:
+
+Laravel links()
+      ↓
+Paginación Tailwind
+      ↓
+span
+svg
+iconos
+
+Después:
+
+Laravel links()
+      ↓
+Bootstrap 5 pagination
+      ↓
+Bootstrap pagination
+
+Y será global, por lo que no tendrás que modificar cada:
+
+->links()
+
+uno por uno.
+
+Importante
+
+No recomiendo esconder los SVG con CSS como:
+
+svg {
+    display: none;
+}
+
+porque eso afectaría todos los SVG del sistema, no solamente la paginación.
+
+Tampoco necesitamos publicar las vistas de Laravel todavía.
+
+La modificación correcta para tu repositorio es Paginator::useBootstrapFive() en AppServiceProvider.
+
+Después de cambiarlo, ejecuta:
+
+php artisan optimize:clear
+
+y vuelve a cargar la página.
+
+Si lo que quieres específicamente es que quede sin ningún icono, ni SVG, ni el <span> que contiene el icono, pero conservando exactamente tu diseño actual, entonces hay un segundo ajuste: crearíamos una vista global personalizada de paginación.
