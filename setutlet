@@ -1,0 +1,264 @@
+Sí. Revisé específicamente el recorrido de la sucursal desde que se selecciona en “Nueva Cotización” hasta que se guarda en la base de datos. Hay una parte que actualmente funciona correctamente, pero también hay un punto que debemos reforzar.
+
+Resultado de la revisión
+
+El flujo actual es:
+
+Seleccionar sucursal
+        ↓
+selectSucursal()
+        ↓
+#sucursal_id
+        ↓
+name="punto_facturacion"
+        ↓
+POST /cotizaciones
+        ↓
+CotizacionController@store
+        ↓
+CreateQuoteAction
+        ↓
+ventas.punto_facturacion
+
+En create.blade.php, el formulario tiene correctamente un campo oculto:
+
+<input type="hidden" name="punto_facturacion" id="sucursal_id">
+
+
+
+Y selectSucursal() actualmente hace:
+
+function selectSucursal(r) {
+    document.getElementById('sucursal_id').value = r.nombre;
+    document.getElementById('txt-sucursal').value = r.nombre;
+    ...
+}
+
+Por lo tanto, la selección sí termina en el campo que Laravel recibe. 
+
+
+---
+
+Pero encontré un problema importante
+
+Actualmente las sucursales se están manejando únicamente con su nombre:
+
+selectSucursal({nombre: 'City Mall'})
+selectSucursal({nombre: 'Outlet Regalon'})
+selectSucursal({nombre: 'Dolar Moll 1,2,3'})
+
+
+
+Eso significa que estamos guardando directamente:
+
+punto_facturacion = "City Mall"
+
+o:
+
+punto_facturacion = "Outlet Regalon"
+
+o:
+
+punto_facturacion = "Dolar Moll 1,2,3"
+
+Esto funciona actualmente, porque CotizacionController acepta punto_facturacion como texto y CreateQuoteAction lo asigna directamente a Venta. 
+
+Pero para los cambios que estamos haciendo, no es suficiente confiar solamente en el texto mostrado.
+
+
+---
+
+Lo que recomiendo corregir
+
+Debemos separar:
+
+ID/valor interno de sucursal
+        +
+Nombre mostrado
+        +
+Formato de cotización
+
+Por ejemplo:
+
+{
+    id: 'city_mall',
+    nombre: 'City Mall',
+    formato: 'city_mall'
+}
+
+{
+    id: 'outlet_regalon',
+    nombre: 'Outlet Regalon',
+    formato: 'outlet'
+}
+
+{
+    id: 'dolar_moll',
+    nombre: 'Dolar Moll 1,2,3',
+    formato: 'dolar'
+}
+
+Así no dependeremos de comparar textos para determinar el formato.
+
+
+---
+
+Además, debemos validar que la sucursal sea obligatoria
+
+Actualmente Laravel tiene:
+
+'punto_facturacion' => 'nullable|string|max:100',
+
+
+
+Esto significa que actualmente es posible enviar una cotización sin sucursal.
+
+Para nuestro nuevo diseño eso no es conveniente, porque la sucursal determina el formato de la cotización.
+
+Deberíamos pasar a:
+
+'punto_facturacion' => 'required|string|max:100',
+
+Y en el frontend también impedir guardar si no hay sucursal seleccionada.
+
+
+---
+
+El flujo correcto debería quedar
+
+NUEVA COTIZACIÓN
+                     │
+                     ▼
+             Seleccionar sucursal
+                     │
+        ┌────────────┼────────────┐
+        ▼            ▼            ▼
+    City Mall    Outlet       Dólar Mall
+        │            │            │
+        └────────────┼────────────┘
+                     ▼
+              Guardar selección
+                     │
+                     ▼
+          punto_facturacion
+                     │
+                     ▼
+             CotizacionController
+                     │
+                     ▼
+             CreateQuoteAction
+                     │
+                     ▼
+             ventas.punto_facturacion
+                     │
+                     ▼
+              Cotización creada
+
+Y posteriormente:
+
+punto_facturacion
+        │
+        ▼
+determinar formato
+        │
+ ┌──────┼─────────┐
+ ▼      ▼         ▼
+City   Outlet    Dólar
+
+
+---
+
+Hay otro detalle que debemos corregir
+
+El nombre que tienes actualmente en el código es:
+
+Outlet Regalon
+Dolar Moll 1,2,3
+
+mientras que en los requerimientos que me diste estamos hablando de:
+
+Outlet Mega
+Dólar Mall
+
+No recomiendo cambiar esos nombres todavía.
+
+Primero debemos decidir si:
+
+A. son simplemente nombres comerciales que quieres cambiar, o
+
+B. Outlet Regalon y Dolar Moll 1,2,3 son los valores actuales que ya existen en cotizaciones.
+
+Si ya existen registros históricos, podemos mantenerlos y crear una capa de equivalencia para no romper cotizaciones anteriores.
+
+
+---
+
+Otro punto que confirmé
+
+CreateQuoteAction sí está tomando actualmente:
+
+'punto_facturacion' => $data['punto_facturacion'] ?? null,
+
+y lo guarda en Venta::create(). 
+
+Por lo tanto, no necesitamos crear otro campo en detalle_ventas para la sucursal.
+
+La sucursal pertenece a la cabecera de la cotización, no a cada producto.
+
+La estructura correcta es:
+
+ventas
+│
+├── numero_factura
+├── cliente_id
+├── cliente_nombre
+├── punto_facturacion   ← SUCURSAL
+├── fecha_venta
+├── subtotal
+├── itbms
+└── total
+       │
+       └──── detalle_ventas
+                ├── producto
+                ├── cantidad
+                ├── precio
+                └── garantia
+
+Eso está bien planteado.
+
+
+---
+
+Mi conclusión
+
+Actualmente la sucursal sí se transmite y se guarda, pero debemos hacer tres mejoras antes de continuar:
+
+1. Hacer la sucursal obligatoria.
+
+
+2. Separar nombre de sucursal y código/formato interno.
+
+
+3. Usar ese formato interno para determinar las columnas de la cotización, en lugar de depender de comparar "City Mall", "Outlet Regalon", etc.
+
+
+
+Y esto encaja perfectamente con los otros cambios que acabamos de definir:
+
+PRODUCTO
+ ├── Referencia
+ ├── Precio
+ └── Aplica ITBMS
+          │
+          ▼
+COTIZACIÓN
+ ├── Sucursal/Formato
+ │
+ └── Detalles
+      ├── Referencia
+      ├── Cantidad
+      ├── Precio
+      ├── Garantía
+      └── ITBMS
+
+Además, no tocaría print.blade.php, como acordamos. El cambio debe resolverse primero en create.blade.php → Controller → Action → Venta/DetalleVenta → show.blade.php.
